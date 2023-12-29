@@ -1,31 +1,49 @@
 #ifndef SECURITYPROJECT_PACKETLAYOUTS_H
 #define SECURITYPROJECT_PACKETLAYOUTS_H
 
+#include <cstdint>
+
 #pragma pack(push, 1)
 
-enum class PacketType
+enum class PacketType : std::uint8_t
 {
-    INIT_DH_PARAMS_REQ,
+    INIT_DH_PARAMS_REQ = 0,
     DH_PARAMS_RSP,
     CREDENTIALS,
+    JWT,
     DATA_PKT
 };
 
-template<PacketType packetType>
-struct Packet
+struct PacketLayout
 {
-    PacketType type = packetType;
+    struct {
+        PacketType flitType : 3;
+        std::uint8_t IsLast : 1; // For DATA_PKT
+        std::uint8_t Rsvd : 4;
+    } Header;
 
-    // Useful data here
+    union {
+        struct {
+            char RawBytes[1023];
+        } InitDHParametersRequest;
+
+        struct {
+            char RawBytes[1023];
+        } DHParametersResponse;
+
+        struct {
+            char RawBytes[1023];
+        } Credentials;
+
+        struct {
+            char RawBytes[1023];
+        } DataPkt;
+
+        char RawBytes[1023];
+    } Payload;
 };
 
-template<>
-struct Packet<PacketType::INIT_DH_PARAMS_REQ>
-{
-    PacketType type = PacketType::INIT_DH_PARAMS_REQ;
-
-    // Useful data here
-};
+static_assert(sizeof(PacketLayout) == 1024, "Packet Layout must match buffer size!");
 
 #pragma pack(pop)
 
