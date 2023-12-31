@@ -9,6 +9,9 @@ include_directories(cryptopp890
         ${PROJECT_SOURCE_DIR})
 #find_package(CryptoPP REQUIRED)
 
+link_directories(${PROJECT_SOURCE_DIR})
+
+add_subdirectory(Common)
 add_subdirectory(secureClient)
 add_subdirectory(secureServer)
 

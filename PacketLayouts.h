@@ -2,10 +2,11 @@
 #define SECURITYPROJECT_PACKETLAYOUTS_H
 
 #include <cstdint>
+#include <algorithm>
 
 #pragma pack(push, 1)
 
-enum class PacketType : std::uint8_t
+enum class PacketType : std::uint32_t
 {
     INIT_DH_PARAMS_REQ = 0,
     DH_PARAMS_RSP,
@@ -14,37 +15,57 @@ enum class PacketType : std::uint8_t
     DATA_PKT
 };
 
-struct PacketLayout
+union PacketLayout
 {
-    struct {
-        PacketType flitType : 3;
-        std::uint8_t IsLast : 1; // For DATA_PKT
-        std::uint8_t Rsvd : 4;
-    } Header;
-
-    union {
+    struct
+    {
         struct {
-            char RawBytes[1023];
-        } InitDHParametersRequest;
+            PacketType    PktType : 3;
+            std::uint32_t IsLast : 1; // For DATA_PKT
+            std::uint32_t Rsvd : 4;
+            std::uint32_t Port;       // For Client packets only. Reserved for Server packets
+        } Header;
 
-        struct {
-            char RawBytes[1023];
-        } DHParametersResponse;
+        static_assert(sizeof(Header) == 5, "Header must be 5 bytes");
 
-        struct {
-            char RawBytes[1023];
-        } Credentials;
+        union {
+            struct {
+                uint8_t RsvdBytes[891];
+            } InitDHParametersRequest;
 
-        struct {
-            char RawBytes[1023];
-        } DataPkt;
+            struct {
+                uint8_t Prime[64];
+                uint8_t Generator[64];
+                uint8_t ServerOpenKey[64];
 
-        char RawBytes[1023];
-    } Payload;
+                uint8_t RsvdBytes[699];
+            } DHParametersResponse;
+
+            struct {
+                uint8_t ClientOpenKey[64];
+
+                uint8_t CypherText[827];
+            } Credentials;
+
+            struct {
+                uint8_t RawBytes[891];
+            } DataPkt;
+
+            uint8_t RawBytes[891];
+        } Payload;
+    };
+
+    std::array<char, 896> RawBytes;
 };
 
-static_assert(sizeof(PacketLayout) == 1024, "Packet Layout must match buffer size!");
+static_assert(sizeof(PacketLayout) == 896, "Packet Layout must match shrank buffer size!");
 
 #pragma pack(pop)
+
+PacketLayout CreateEmptyPacket() {
+    PacketLayout result;
+    result.RawBytes.fill(0);
+    return result;
+}
 
 #endif //SECURITYPROJECT_PACKETLAYOUTS_H
