@@ -8,6 +8,7 @@
 #include <cryptopp/pwdbased.h>
 #include <cryptopp/dh.h>
 #include <cryptopp/nbtheory.h>
+#include <cryptopp/modes.h>
 #include "JwtUtils.h"
 #include "Definitions.h"
 #include "PacketLayouts.h"
@@ -66,11 +67,12 @@ ServerApplication::ServerApplication(bool is_debug)
 void ServerApplication::Run() {
     StartServer(SERVER_PORT);
 
+    // TODO: Decompose into request handling mechanism
     std::array<char, 1024> receive_buffer;
     GetMessage(receive_buffer.data());
-    PacketLayout packet;
-    packet.RawBytes = ShrinkBuffer(receive_buffer);
-    std::cout << static_cast<uint32_t>(packet.Header.PktType) << std::endl;
+    PacketLayout receivedPkt;
+    receivedPkt.RawBytes = ShrinkBuffer(receive_buffer);
+//    std::cout << static_cast<uint32_t>(packet.Header.PktType) << std::endl;
 
     auto DHParamsResponse = CreateEmptyPacket();
     DHParamsResponse.Header.PktType = PacketType::DH_PARAMS_RSP;
@@ -96,7 +98,7 @@ void ServerApplication::Run() {
               sizeof(DHParamsResponse.Payload.DHParametersResponse.Generator));
 
     auto expanded_packet = ExpandBuffer(DHParamsResponse.RawBytes);
-    SendMessage(expanded_packet.data(), packet.Header.Port);
+    SendMessage(expanded_packet.data(), receivedPkt.Header.Port);
 
     DebugLog(ToHexString(k2));
     DebugLog(ToHexString(p));
@@ -104,6 +106,7 @@ void ServerApplication::Run() {
 
     GetMessage(receive_buffer.data());
     PacketLayout credentialsPacket;
+
     credentialsPacket.RawBytes = ShrinkBuffer(receive_buffer);
     std::cout << static_cast<uint32_t>(credentialsPacket.Header.PktType) << std::endl;
 
@@ -116,6 +119,24 @@ void ServerApplication::Run() {
     auto commonSecretKey = CryptoPP::ModularExponentiation(clientOpenKey, k1, p);
     DebugLog(ToHexString(commonSecretKey));
 
+
+    byte key[AES::DEFAULT_KEYLENGTH];
+    commonSecretKey.Encode(key, sizeof(key));
+    std::string ciphertext(credentialsPacket.Payload.Credentials.CypherText);
+    auto& iv = credentialsPacket.Payload.Credentials.IV;
+
+    std::string recoveredText;
+    // Decryption
+    CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryption(key, sizeof(key), iv);
+    CryptoPP::StringSource(ciphertext, true,
+                           new CryptoPP::StreamTransformationFilter(decryption,
+                                                                    new CryptoPP::StringSink(recoveredText)
+                           )
+    );
+
+
+    std::cout << "Ciphertext: " << ciphertext << std::endl;
+    std::cout << "Recoveredtext: " << recoveredText << std::endl;
 
 //    std::string password = "secure_password";
 //    SecByteBlock salt = GenerateSalt(16);

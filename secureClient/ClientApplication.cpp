@@ -10,8 +10,10 @@
 
 #include <cryptopp/integer.h>
 #include <cryptopp/dh.h>
-#include <nbtheory.h>
+#include <cryptopp/nbtheory.h>
 #include <cryptopp/osrng.h>
+#include <cryptopp/aes.h>
+#include <cryptopp/modes.h>
 
 ClientApplication::ClientApplication(bool is_debug)
         : NetworkApplication(is_debug)
@@ -30,54 +32,9 @@ void TestShrinking()
 
 void ClientApplication::Run()
 {
-    using namespace CryptoPP;
-
     StartServerOnFirstAvailablePort();
 
-    auto initDHPacket = CreateEmptyPacket();
-    initDHPacket.Header.PktType = PacketType::INIT_DH_PARAMS_REQ;
-    initDHPacket.Header.Port = Port;
-    auto expanded_packet = ExpandBuffer(initDHPacket.RawBytes);
-    SendMessage(expanded_packet.data(), SERVER_PORT);
-
-
-    std::array<char, 1024> receive_buffer;
-    GetMessage(receive_buffer.data());
-    PacketLayout packet;
-    packet.RawBytes = ShrinkBuffer(receive_buffer);
-    std::cout << static_cast<uint32_t>(packet.Header.PktType) << std::endl;
-
-    CryptoPP::Integer p, g, serverOpenKey;
-    p.Decode(packet.Payload.DHParametersResponse.Prime, sizeof(packet.Payload.DHParametersResponse.Prime));
-    g.Decode(packet.Payload.DHParametersResponse.Generator, sizeof(packet.Payload.DHParametersResponse.Generator));
-    serverOpenKey.Decode(packet.Payload.DHParametersResponse.ServerOpenKey, sizeof(packet.Payload.DHParametersResponse.ServerOpenKey));
-
-    DebugLog(ToHexString(serverOpenKey));
-    DebugLog(ToHexString(p));
-    DebugLog(ToHexString(g));
-
-    AutoSeededRandomPool prng;
-    DH dh(p, g);
-    SecByteBlock t1(dh.PrivateKeyLength()), t2(dh.PublicKeyLength());
-    dh.GenerateKeyPair(prng, t1, t2);
-    Integer k1(t1, t1.size()), k2(t2, t2.size());
-
-
-    DebugLog(ToHexString(k2));
-
-    auto credentialsPacket = CreateEmptyPacket();
-    credentialsPacket.Header.PktType = PacketType::CREDENTIALS;
-    credentialsPacket.Header.Port = Port;
-
-    k2.Encode(credentialsPacket.Payload.Credentials.ClientOpenKey,
-             sizeof(credentialsPacket.Payload.Credentials.ClientOpenKey));
-    expanded_packet = ExpandBuffer(credentialsPacket.RawBytes);
-    SendMessage(expanded_packet.data(), SERVER_PORT);
-
-    auto commonSecretKey = CryptoPP::ModularExponentiation(serverOpenKey, k1, p);
-
-    DebugLog(ToHexString(commonSecretKey));
-
+    PerformKeyExchange();
 }
 
 int ClientApplication::StartServerOnFirstAvailablePort() {
@@ -91,4 +48,103 @@ int ClientApplication::StartServerOnFirstAvailablePort() {
     }
 
     return 1;
+}
+
+bool ClientApplication::PerformKeyExchange()
+{
+    using namespace CryptoPP;
+
+
+    auto pendingPacket = CreateEmptyPacket();
+
+    auto& initDHPacket = pendingPacket;
+    initDHPacket.Header.PktType = PacketType::INIT_DH_PARAMS_REQ;
+    initDHPacket.Header.Port = Port;
+    auto expanded_packet = ExpandBuffer(initDHPacket.RawBytes);
+    SendMessage(expanded_packet.data(), SERVER_PORT);
+
+    std::array<char, 1024> receive_buffer;
+    GetMessage(receive_buffer.data());
+    PacketLayout receivedPkt;
+    // TODO: Add integrity check upon receiving
+    receivedPkt.RawBytes = ShrinkBuffer(receive_buffer);
+
+    if (receivedPkt.Header.PktType != PacketType::DH_PARAMS_RSP)
+        return false;
+
+    auto& dhParamsRsp = receivedPkt;
+//    std::cout << static_cast<uint32_t>(packet.Header.PktType) << std::endl;
+
+    CryptoPP::Integer p, g, serverOpenKey;
+    p.Decode(dhParamsRsp.Payload.DHParametersResponse.Prime, sizeof(dhParamsRsp.Payload.DHParametersResponse.Prime));
+    g.Decode(dhParamsRsp.Payload.DHParametersResponse.Generator, sizeof(dhParamsRsp.Payload.DHParametersResponse.Generator));
+    serverOpenKey.Decode(dhParamsRsp.Payload.DHParametersResponse.ServerOpenKey, sizeof(dhParamsRsp.Payload.DHParametersResponse.ServerOpenKey));
+
+    DebugLog(ToHexString(serverOpenKey));
+    DebugLog(ToHexString(p));
+    DebugLog(ToHexString(g));
+
+    AutoSeededRandomPool prng;
+    DH dh(p, g);
+    SecByteBlock secret(dh.PrivateKeyLength()), publicKey(dh.PublicKeyLength());
+    dh.GenerateKeyPair(prng, secret, publicKey);
+    Integer secretInt(secret, secret.size()), publicKeyInt(publicKey, publicKey.size());
+
+    DebugLog(ToHexString(publicKeyInt));
+
+    pendingPacket = CreateEmptyPacket();
+
+    auto& credentialsPacket = pendingPacket;
+    credentialsPacket.Header.PktType = PacketType::CREDENTIALS;
+    credentialsPacket.Header.Port = Port;
+
+    publicKeyInt.Encode(credentialsPacket.Payload.Credentials.ClientOpenKey,
+              sizeof(credentialsPacket.Payload.Credentials.ClientOpenKey));
+
+
+    CommonKey = CryptoPP::ModularExponentiation(serverOpenKey, secretInt, p);
+    DebugLog(ToHexString(CommonKey));
+
+    byte key[AES::DEFAULT_KEYLENGTH];
+    CommonKey.Encode(key, sizeof(key));
+    byte iv[AES::BLOCKSIZE] = {0, 1, 0, 1, 0, 1, 0, 1,
+                               0, 1, 0, 1, 0, 1, 0, 1};
+    std::copy(iv, iv + sizeof(iv), credentialsPacket.Payload.Credentials.IV);
+
+
+    CryptoPP::AES::Encryption aesEncryption(key, CryptoPP::AES::DEFAULT_KEYLENGTH);
+    CryptoPP::AES::Decryption aesDecryption(key, CryptoPP::AES::DEFAULT_KEYLENGTH);
+
+    auto plaintext = "Hello, World!\0";
+    std::string ciphertext, recoveredtext;
+
+    // Encryption
+    CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryption(key, sizeof(key), iv);
+    CryptoPP::StringSource(plaintext, true,
+                           new CryptoPP::StreamTransformationFilter(encryption,
+                                                                    new CryptoPP::StringSink(ciphertext)
+                           )
+    );
+
+    // Decryption
+    CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryption(key, sizeof(key), iv);
+    CryptoPP::StringSource(ciphertext, true,
+                           new CryptoPP::StreamTransformationFilter(decryption,
+                                                                    new CryptoPP::StringSink(recoveredtext)
+                           )
+    );
+
+    std::cout << "Plaintext: " << plaintext << std::endl;
+    std::cout << "Ciphertext: " << ciphertext << std::endl;
+    std::cout << "Recoveredtext: " << recoveredtext << std::endl;
+
+    AES::DEFAULT_KEYLENGTH;
+    AES::BLOCKSIZE;
+    auto c_ciphertext = ciphertext.c_str();
+    std::copy(c_ciphertext, c_ciphertext + strlen(c_ciphertext), credentialsPacket.Payload.Credentials.CypherText);
+
+    expanded_packet = ExpandBuffer(credentialsPacket.RawBytes);
+    SendMessage(expanded_packet.data(), SERVER_PORT);
+
+    return false;
 }

@@ -44,7 +44,9 @@ union PacketLayout
             struct {
                 uint8_t ClientOpenKey[64];
 
-                uint8_t CypherText[827];
+                uint8_t IV[16];
+                char CypherText[800];
+                uint8_t RsvdBytes[11];
             } Credentials;
 
             struct {

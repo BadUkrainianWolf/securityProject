@@ -13,18 +13,23 @@
 #define SECURITYPROJECT_SERVERAPPLICATION_H
 
 #include "Common/NetworkApplication.h"
+#include <cryptopp/integer.h>
+
 
 class ClientApplication : public NetworkApplication
 {
 public:
     explicit ClientApplication(bool is_debug = false);
 
+    bool PerformKeyExchange();
+
     void Run();
 
     int StartServerOnFirstAvailablePort();
 
 private:
-    int Port;
+    int Port = -1;
+    CryptoPP::Integer CommonKey = -1;
 };
 
 
