@@ -54,19 +54,7 @@ union PacketLayout
                 uint8_t IV[16];
                 uint8_t CipherText[864];
                 uint8_t RsvdBytes[11];
-            } JwtPkt;
-
-            struct {
-                uint8_t IV[16];
-                uint8_t CipherText[864];
-                uint8_t RsvdBytes[11];
             } CipherContent;
-
-            struct {
-                uint8_t IV[16];
-                uint8_t CipherText[864];
-                uint8_t RsvdBytes[11];
-            } DataPkt;
 
             uint8_t RawBytes[891];
         } Payload;
@@ -105,6 +93,7 @@ static_assert(sizeof(JwtSecContent) == 864, "JwtSecContent must match cipher tex
 enum class FileRequestType : std::uint8_t
 {
     UploadFile = 0,
+    AllowUpload,
     DownloadFile,
     ViewFileList
 };
@@ -132,7 +121,7 @@ union FileResponseSecContent
     {
         char Jwt[164];
         std::uint16_t Length;          // Length > FileContent length means there are still file content packets to come
-        std::uint8_t FileContent[698];
+        char FileContent[698];
     } UploadFileContent;
 
     struct

@@ -156,39 +156,9 @@ void ServerApplication::HandleCredentials(const PacketLayout &credentialsPacket)
         JwtSecContent jwtSecContent;
         CopyAsCString(GenerateJwt(username), jwtSecContent.jwt);
 
-        EncryptSecContent(PendingPacket.Payload.JwtPkt, jwtSecContent, connection.CommonKey.data());
+        EncryptSecContent(PendingPacket.Payload.CipherContent, jwtSecContent, connection.CommonKey.data());
         SendPendingPacket(clientPort);
     }
-}
-
-// Function to copy file contents from source to destination
-void copyFile(const std::string& source, const std::string& destination) {
-    constexpr int BUFFER_SIZE = 20;
-
-    std::ifstream sourceFile(source, std::ios::binary);
-
-    if (!sourceFile.is_open()) {
-        std::cerr << "Error opening source file: " << source << std::endl;
-        return;
-    }
-
-    std::ofstream destinationFile(destination, std::ios::binary);
-
-    if (!destinationFile.is_open()) {
-        std::cerr << "Error opening destination file: " << destination << std::endl;
-        return;
-    }
-
-    // Read and write the file in chunks
-    std::vector<char> buffer(BUFFER_SIZE);
-    while (!sourceFile.eof()) {
-        sourceFile.read(buffer.data(), BUFFER_SIZE);
-        std::streamsize bytesRead = sourceFile.gcount();
-        destinationFile.write(buffer.data(), bytesRead);
-    }
-
-    sourceFile.close();
-    destinationFile.close();
 }
 
 void ServerApplication::HandleFileRequest(const PacketLayout &fileRequest)
@@ -225,7 +195,7 @@ void ServerApplication::HandleFileRequest(const PacketLayout &fileRequest)
         case FileRequestType::DownloadFile:
             HandleDownloadFileListRequest(fileRequest.Header.Port, requestSecContent); break;
         case FileRequestType::UploadFile:
-            break;
+            HandleUploadFileListRequest(fileRequest.Header.Port, requestSecContent); break;
     }
 }
 
@@ -234,6 +204,8 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
 
     try {
 //      fs::path current_path = fs::current_path();
+        if (!fs::exists(SERVER_DIRECTORY))
+            fs::create_directory(SERVER_DIRECTORY);
 
         std::string result;
         for (const auto& entry : fs::directory_iterator(SERVER_DIRECTORY)) {
@@ -249,8 +221,6 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
         EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, connection.CommonKey.data());
 
         SendPendingPacket(fileRequest.Header.Port);
-
-//        copyFile("/home/seed/securityProject/serverFiles/some_file.txt", "/home/seed/securityProject/serverFiles/some_file_copy.txt");
     } catch (const std::filesystem::filesystem_error& e) {
         std::cerr << "Error accessing the directory: " << e.what() << std::endl;
     }
@@ -259,27 +229,27 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
 void ServerApplication::HandleDownloadFileListRequest(const int clientPort, const FileRequestSecContent& requestSecContent)
 {
     auto& connection = Connections[clientPort];
-    auto source = std::string(SERVER_DIRECTORY) + "/" + requestSecContent.FileName;
-    std::ifstream sourceFile(source, std::ios::binary);
+    auto filePath = std::string(SERVER_DIRECTORY) + "/" + requestSecContent.FileName;
+    std::ifstream file(filePath, std::ios::binary);
 
-    if (!sourceFile.is_open()) {
-        std::cerr << "Error opening source file: " << source << std::endl;
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filePath << std::endl;
         return;
     }
 
-    sourceFile.seekg(0, std::ios::end);
-    std::streampos remainingFileSize = sourceFile.tellg();
-    sourceFile.seekg(0, std::ios::beg);
+    file.seekg(0, std::ios::end);
+    std::streampos remainingFileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
 
     constexpr int FILE_BUFFER_SIZE = sizeof(FileResponseSecContent::DownloadFileContent.FileContent);
-    while (!sourceFile.eof())
+    while (!file.eof())
     {
 
         PendingPacket.Header.PktType = PacketType::FILE_LIST_RESPONSE;
 
         FileResponseSecContent secContent;
-        sourceFile.read(secContent.DownloadFileContent.FileContent, FILE_BUFFER_SIZE);
-        std::streamsize bytesRead = sourceFile.gcount();
+        file.read(secContent.DownloadFileContent.FileContent, FILE_BUFFER_SIZE);
+        std::streamsize bytesRead = file.gcount();
         remainingFileSize -= bytesRead;
         secContent.DownloadFileContent.Length = remainingFileSize > 0 ? FILE_BUFFER_SIZE + 1 : bytesRead;
 
@@ -287,5 +257,72 @@ void ServerApplication::HandleDownloadFileListRequest(const int clientPort, cons
         SendPendingPacket(clientPort);
     }
 
-    sourceFile.close();
+    file.close();
+}
+
+void ServerApplication::HandleUploadFileListRequest(const int clientPort,
+    const FileRequestSecContent &requestSecContent)
+{
+    auto& connection = Connections[clientPort];
+    auto fileName = std::string(requestSecContent.FileName);
+
+    {
+        PendingPacket.Header.PktType = PacketType::FIlE_REQUEST;
+
+        FileRequestSecContent secContent;
+        secContent.Type = FileRequestType::AllowUpload;
+        EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, connection.CommonKey.data());
+        SendPendingPacket(clientPort);
+
+        DebugLog("Allowed file upload");
+    }
+
+    std::array<char, 1024> receive_buffer;
+
+    {
+        if (!fs::exists(SERVER_DIRECTORY))
+            fs::create_directory(SERVER_DIRECTORY);
+
+        std::string destination = std::string(SERVER_DIRECTORY) + "/" + fileName;
+        std::ofstream destinationFile(destination, std::ios::binary);
+
+        if (!destinationFile.is_open()) {
+            std::cerr << "Error opening destination file: " << destination << std::endl;
+            return;
+        }
+
+        bool fileIsFull = false;
+        while (!fileIsFull)
+        {
+
+            GetMessage(receive_buffer.data());
+
+            PacketLayout receivedPkt;
+            // TODO: Add integrity check upon receiving
+            receivedPkt.RawBytes = ShrinkBuffer(receive_buffer);
+
+            if (receivedPkt.Header.PktType != PacketType::FILE_LIST_RESPONSE)
+                return;
+
+            auto& fileRequestResponse = receivedPkt;
+
+            FileResponseSecContent secContent;
+            DecryptSecContent(fileRequestResponse.Payload.CipherContent, secContent, connection.CommonKey.data());
+
+            constexpr int bufferSize = sizeof(secContent.UploadFileContent.FileContent);
+            auto chunkLength = bufferSize;
+            if (secContent.UploadFileContent.Length <= bufferSize)
+            {
+                chunkLength = secContent.UploadFileContent.Length;
+                fileIsFull = true;
+            }
+
+            destinationFile.write(secContent.UploadFileContent.FileContent, chunkLength);
+            DebugLog("File chunk received and written");
+        }
+
+        destinationFile.close();
+    }
+
+
 }

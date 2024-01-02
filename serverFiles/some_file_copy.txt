@@ -1,2 +1,0 @@
-Hello, World!
-I want this file to be bigger than 20 bytes!

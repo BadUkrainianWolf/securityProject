@@ -47,6 +47,7 @@ private:
     void HandleFileRequest(const PacketLayout &fileRequest);
     void HandleViewFileListRequest(const PacketLayout &fileRequest);
     void HandleDownloadFileListRequest(const int clientPort, const FileRequestSecContent& requestSecContent);
+    void HandleUploadFileListRequest(const int clientPort, const FileRequestSecContent& requestSecContent);
 };
 
 

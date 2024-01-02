@@ -33,7 +33,8 @@ private:
     int StartServerOnFirstAvailablePort();
     bool PerformKeyExchange(std::array<char, 1024>& receive_buffer);
     bool RequestFileList(std::array<char, 1024>& receive_buffer);
-    bool RequestFileDownload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
+    bool PerformFileDownload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
+    bool PerformFileUpload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
 };
 
 #endif //SECURITYPROJECT_SERVERAPPLICATION_H

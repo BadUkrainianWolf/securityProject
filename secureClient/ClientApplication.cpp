@@ -14,8 +14,10 @@
 #include <cryptopp/osrng.h>
 #include <cryptopp/aes.h>
 #include <cryptopp/modes.h>
-
+#include <filesystem>
 #include <fstream>
+
+namespace fs = std::filesystem;
 
 ClientApplication::ClientApplication(bool is_debug)
         : NetworkApplication(is_debug)
@@ -42,7 +44,8 @@ void ClientApplication::Run()
 
     PerformKeyExchange(receive_buffer);
 //    RequestFileList(receive_buffer);
-    RequestFileDownload(receive_buffer, "some_file.txt");
+//    PerformFileDownload(receive_buffer, "some_file.txt");
+    PerformFileUpload(receive_buffer, "some_file.txt");
 }
 
 int ClientApplication::StartServerOnFirstAvailablePort() {
@@ -133,7 +136,7 @@ bool ClientApplication::PerformKeyExchange(std::array<char, 1024>& receive_buffe
         auto& jwtRsp = receivedPkt;
 
         JwtSecContent secContent;
-        DecryptSecContent(jwtRsp.Payload.JwtPkt, secContent, CommonKey.data());
+        DecryptSecContent(jwtRsp.Payload.CipherContent, secContent, CommonKey.data());
 
         Jwt = std::string(secContent.jwt);
         DebugLog("Jwt: " + Jwt);
@@ -180,7 +183,7 @@ bool ClientApplication::RequestFileList(std::array<char, 1024>& receive_buffer)
     return true;
 }
 
-bool ClientApplication::RequestFileDownload(std::array<char, 1024> &receive_buffer, const std::string& fileName)
+bool ClientApplication::PerformFileDownload(std::array<char, 1024> &receive_buffer, const std::string& fileName)
 {
     {
         auto &fileRequestPacket = PendingPacket;
@@ -198,6 +201,9 @@ bool ClientApplication::RequestFileDownload(std::array<char, 1024> &receive_buff
     }
 
     {
+        if (!fs::exists(CLIENT_DIRECTORY))
+            fs::create_directory(CLIENT_DIRECTORY);
+
         std::string destination = std::string(CLIENT_DIRECTORY) + "/" + fileName;
         std::ofstream destinationFile(destination, std::ios::binary);
 
@@ -239,4 +245,71 @@ bool ClientApplication::RequestFileDownload(std::array<char, 1024> &receive_buff
     }
 
     return true;
+}
+
+bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer, const std::string &fileName)
+{
+    {
+        auto &fileRequestPacket = PendingPacket;
+
+        fileRequestPacket.Header.PktType = PacketType::FIlE_REQUEST;
+        fileRequestPacket.Header.Port = Port;
+
+        FileRequestSecContent secContent;
+        secContent.Type = FileRequestType::UploadFile;
+        CopyAsCString(fileName, secContent.FileName);
+        CopyAsCString(Jwt, secContent.Jwt);
+
+        EncryptSecContent(fileRequestPacket.Payload.CipherContent, secContent, CommonKey.data());
+        SendPendingPacket(SERVER_PORT);
+    }
+
+    GetMessage(receive_buffer.data());
+
+    PacketLayout receivedPkt;
+    // TODO: Add integrity check upon receiving
+    receivedPkt.RawBytes = ShrinkBuffer(receive_buffer);
+
+    if (receivedPkt.Header.PktType != PacketType::FIlE_REQUEST)
+        return false;
+
+    {
+        auto& fileRequest = receivedPkt;
+
+        FileRequestSecContent secContent;
+        DecryptSecContent(fileRequest.Payload.CipherContent, secContent, CommonKey.data());
+        if (secContent.Type != FileRequestType::AllowUpload)
+            return false;
+    }
+
+//    auto filePath = fs::current_path().string() + "/" + fileName;
+    auto filePath = std::string(CLIENT_DIRECTORY) + "/" + fileName;
+    std::ifstream file(filePath, std::ios::binary);
+
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filePath << std::endl;
+        return false;
+    }
+
+    file.seekg(0, std::ios::end);
+    std::streampos remainingFileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    constexpr int FILE_BUFFER_SIZE = sizeof(FileResponseSecContent::UploadFileContent.FileContent);
+    while (!file.eof())
+    {
+        PendingPacket.Header.PktType = PacketType::FILE_LIST_RESPONSE;
+
+        FileResponseSecContent secContent;
+        file.read(secContent.UploadFileContent.FileContent, FILE_BUFFER_SIZE);
+        std::streamsize bytesRead = file.gcount();
+        remainingFileSize -= bytesRead;
+        secContent.UploadFileContent.Length = remainingFileSize > 0 ? FILE_BUFFER_SIZE + 1 : bytesRead;
+        CopyAsCString(Jwt, secContent.UploadFileContent.Jwt);
+
+        EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, CommonKey.data());
+        SendPendingPacket(SERVER_PORT);
+    }
+
+    file.close();
 }
