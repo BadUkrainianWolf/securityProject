@@ -1,6 +1,6 @@
 add_executable(secureClient SecureClient.cpp
         ../client.h
-        ../PacketLayouts.h
+        ../Common/PacketLayouts.h
         ../Definitions.h
         ClientApplication.cpp
         ClientApplication.h

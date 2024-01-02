@@ -1,7 +1,8 @@
 #include "ServerApplication.h"
 
+#include <filesystem>
+#include <iostream>
 #include "files.h"
-#include "secureServer/Auth/UserStorage.h"
 #include <cryptopp/sha.h>
 #include <cryptopp/hex.h>
 #include <cryptopp/osrng.h>
@@ -11,10 +12,11 @@
 #include <cryptopp/modes.h>
 #include "JwtUtils.h"
 #include "Definitions.h"
-#include "PacketLayouts.h"
 #include "Common/Utils.h"
+#include <algorithm>
 
 using namespace CryptoPP;
+namespace fs = std::filesystem;
 
 SecByteBlock GenerateSalt(size_t size)
 {
@@ -34,81 +36,92 @@ SecByteBlock HashPassword(const std::string& password, const SecByteBlock& salt)
     return derivedKey;
 }
 
-void DoDiffieHellman()
-{
-    AutoSeededRandomPool prng;
-    Integer p, q, g;
-    PrimeAndGenerator pg;
-
-    pg.Generate(1, prng, 512, 511);
-    p = pg.Prime();
-//    q = pg.SubPrime();
-    g = pg.Generator();
-
-//    assert()
-
-    DH dh(p, g);
-    SecByteBlock t1(dh.PrivateKeyLength()), t2(dh.PublicKeyLength());
-    dh.GenerateKeyPair(prng, t1, t2);
-    Integer k1(t1, t1.size()), k2(t2, t2.size());
-
-    std::cout << "Private key:\n";
-    std::cout << std::hex << k1 << std::endl;
-
-    std::cout << "Public key:\n";
-    std::cout << std::hex << k2 << std::endl;
-}
 
 ServerApplication::ServerApplication(bool is_debug)
     : NetworkApplication(is_debug)
 {
 }
 
-void ServerApplication::Run() {
+void ServerApplication::Run()
+{
     StartServer(SERVER_PORT);
 
-    // TODO: Decompose into request handling mechanism
+    while (true)
+    {
+        HandleRequest();
+    }
+}
+
+void ServerApplication::HandleRequest()
+{
     std::array<char, 1024> receive_buffer;
     GetMessage(receive_buffer.data());
     PacketLayout receivedPkt;
     receivedPkt.RawBytes = ShrinkBuffer(receive_buffer);
-//    std::cout << static_cast<uint32_t>(packet.Header.PktType) << std::endl;
 
-    auto DHParamsResponse = CreateEmptyPacket();
-    DHParamsResponse.Header.PktType = PacketType::DH_PARAMS_RSP;
-//    DHParamsResponse.Header.Port = Port;
+    switch (receivedPkt.Header.PktType)
+    {
+        case PacketType::INIT_DH_PARAMS_REQ:
+            HandleInitDHParamsReq(receivedPkt); break;
+        case PacketType::CREDENTIALS:
+            HandleCredentials(receivedPkt); break;
+        case PacketType::FIlE_REQUEST:
+            HandleFileRequest(receivedPkt); break;
+        default:
+            break;
+    }
+}
+
+void ServerApplication::HandleInitDHParamsReq(const PacketLayout &request)
+{
+    // TODO: Add extra request validation?
+    auto& connection  = Connections[request.Header.Port];
+
+    connection.State = ConnectionState::INIT_DH_REQUESTED;
+
+    PendingPacket.Header.PktType = PacketType::DH_PARAMS_RSP;
     AutoSeededRandomPool prng;
-    Integer p, q, g;
     PrimeAndGenerator pg;
 
     pg.Generate(1, prng, 512, 511);
-    p = pg.Prime();
-//    q = pg.SubPrime();
-    g = pg.Generator();
+    connection.Prime = pg.Prime();
+    connection.Generator = pg.Generator();
 
-    DH dh(p, g);
+    DH dh(connection.Prime,
+          connection.Generator);
     SecByteBlock t1(dh.PrivateKeyLength()), t2(dh.PublicKeyLength());
     dh.GenerateKeyPair(prng, t1, t2);
-    Integer k1(t1, t1.size()), k2(t2, t2.size());
-    k2.Encode(DHParamsResponse.Payload.DHParametersResponse.ServerOpenKey,
-              sizeof(DHParamsResponse.Payload.DHParametersResponse.ServerOpenKey));
-    p.Encode(DHParamsResponse.Payload.DHParametersResponse.Prime,
-              sizeof(DHParamsResponse.Payload.DHParametersResponse.Prime));
-    g.Encode(DHParamsResponse.Payload.DHParametersResponse.Generator,
-              sizeof(DHParamsResponse.Payload.DHParametersResponse.Generator));
+    Integer openKey(t2, t2.size());
 
-    auto expanded_packet = ExpandBuffer(DHParamsResponse.RawBytes);
-    SendMessage(expanded_packet.data(), receivedPkt.Header.Port);
+    connection.LocalSecret = Integer(t1, t1.size());
+    openKey.Encode(PendingPacket.Payload.DHParametersResponse.ServerOpenKey,
+              sizeof(PendingPacket.Payload.DHParametersResponse.ServerOpenKey));
+    connection.Prime.Encode(PendingPacket.Payload.DHParametersResponse.Prime,
+             sizeof(PendingPacket.Payload.DHParametersResponse.Prime));
+    connection.Generator.Encode(PendingPacket.Payload.DHParametersResponse.Generator,
+             sizeof(PendingPacket.Payload.DHParametersResponse.Generator));
 
-    DebugLog(ToHexString(k2));
-    DebugLog(ToHexString(p));
-    DebugLog(ToHexString(g));
+    SendPendingPacket(request.Header.Port);
 
-    GetMessage(receive_buffer.data());
-    PacketLayout credentialsPacket;
+    DebugLog(ToHexString(connection.Prime));
+    DebugLog(ToHexString(connection.Generator));
+}
 
-    credentialsPacket.RawBytes = ShrinkBuffer(receive_buffer);
-    std::cout << static_cast<uint32_t>(credentialsPacket.Header.PktType) << std::endl;
+void ServerApplication::HandleCredentials(const PacketLayout &credentialsPacket) {
+    // TODO: Add correct error handling
+    auto clientPort = credentialsPacket.Header.Port;
+    if (Connections.find(clientPort) == Connections.end())
+    {
+        DebugLog("No connection info!");
+        return;
+    }
+
+    auto& connection = Connections[clientPort];
+    if (connection.State != ConnectionState::INIT_DH_REQUESTED)
+    {
+        DebugLog("Invalid request!");
+        return;
+    }
 
     Integer clientOpenKey;
     clientOpenKey.Decode(credentialsPacket.Payload.Credentials.ClientOpenKey,
@@ -116,57 +129,163 @@ void ServerApplication::Run() {
 
     DebugLog(ToHexString(clientOpenKey));
 
-    auto commonSecretKey = CryptoPP::ModularExponentiation(clientOpenKey, k1, p);
-    DebugLog(ToHexString(commonSecretKey));
+    auto commonKey = CryptoPP::ModularExponentiation(clientOpenKey, connection.LocalSecret, connection.Prime);
+    DebugLog(ToHexString(commonKey));
+    commonKey.Encode(connection.CommonKey.data(), connection.CommonKey.size());
 
+    CredentialsSecContent secContent;
 
-    byte key[AES::DEFAULT_KEYLENGTH];
-    commonSecretKey.Encode(key, sizeof(key));
-    std::string ciphertext(credentialsPacket.Payload.Credentials.CypherText);
-    auto& iv = credentialsPacket.Payload.Credentials.IV;
+    DecryptSecContent(credentialsPacket.Payload.Credentials, secContent, connection.CommonKey.data());
 
-    std::string recoveredText;
-    // Decryption
-    CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption decryption(key, sizeof(key), iv);
-    CryptoPP::StringSource(ciphertext, true,
-                           new CryptoPP::StreamTransformationFilter(decryption,
-                                                                    new CryptoPP::StringSink(recoveredText)
-                           )
-    );
+    const auto username = std::string(reinterpret_cast<const char *>(secContent.username));
+    const auto password = std::string(reinterpret_cast<const char *>(secContent.password));
+    DebugLog(username);
+    DebugLog(password);
 
+    auto user = UserStorage.GetUserData(username);
+    SecByteBlock hashedPassword = HashPassword(password, user.salt);
 
-    std::cout << "Ciphertext: " << ciphertext << std::endl;
-    std::cout << "Recoveredtext: " << recoveredText << std::endl;
+    if (std::equal(hashedPassword.begin(), hashedPassword.end(),
+                   user.hashedPassword.begin(), user.hashedPassword.end()))
+    {
+        DebugLog("Correct password");
 
-//    std::string password = "secure_password";
-//    SecByteBlock salt = GenerateSalt(16);
-//
-//    // Generate a random salt
-//    // Print the salt in hexadecimal format
-//    HexEncoder encoder(new FileSink(std::cout));
-//    encoder.Put(salt, salt.size());
-//    encoder.MessageEnd();
-//    std::cout << std::endl;
-//
-//    SecByteBlock hashedPassword = HashPassword(password, salt);
-//    SecByteBlock hashedPassword2 = HashPassword(password, salt);
-//
-//    std::cout << "Hashed Password: ";
-//    encoder.Put(hashedPassword, hashedPassword.size());
-//    encoder.MessageEnd();
-//    std::cout << std::endl;
-//
-//    std::cout << "Hashed Password2: ";
-//    encoder.Put(hashedPassword2, hashedPassword.size());
-//    encoder.MessageEnd();
-//    std::cout << std::endl;
-//
-//    UserStorage userStorage{};
-//    userStorage.PrintUsers();
-//
-//    std::cout << GenerateJwt("Mariia") << std::endl;
-//
-//    DoDiffieHellman();
+        connection.State = ConnectionState::KEY_EXCHANGE_DONE;
 
-    StopServer();
+        PendingPacket.Header.PktType = PacketType::JWT;
+        JwtSecContent jwtSecContent;
+        CopyAsCString(GenerateJwt(username), jwtSecContent.jwt);
+
+        EncryptSecContent(PendingPacket.Payload.JwtPkt, jwtSecContent, connection.CommonKey.data());
+        SendPendingPacket(clientPort);
+    }
+}
+
+// Function to copy file contents from source to destination
+void copyFile(const std::string& source, const std::string& destination) {
+    constexpr int BUFFER_SIZE = 20;
+
+    std::ifstream sourceFile(source, std::ios::binary);
+
+    if (!sourceFile.is_open()) {
+        std::cerr << "Error opening source file: " << source << std::endl;
+        return;
+    }
+
+    std::ofstream destinationFile(destination, std::ios::binary);
+
+    if (!destinationFile.is_open()) {
+        std::cerr << "Error opening destination file: " << destination << std::endl;
+        return;
+    }
+
+    // Read and write the file in chunks
+    std::vector<char> buffer(BUFFER_SIZE);
+    while (!sourceFile.eof()) {
+        sourceFile.read(buffer.data(), BUFFER_SIZE);
+        std::streamsize bytesRead = sourceFile.gcount();
+        destinationFile.write(buffer.data(), bytesRead);
+    }
+
+    sourceFile.close();
+    destinationFile.close();
+}
+
+void ServerApplication::HandleFileRequest(const PacketLayout &fileRequest)
+{
+    auto clientPort = fileRequest.Header.Port;
+    if (Connections.find(clientPort) == Connections.end())
+    {
+        DebugLog("No connection info!");
+        return;
+    }
+
+    auto& connection = Connections[clientPort];
+
+    FileRequestSecContent requestSecContent;
+
+    DecryptSecContent(fileRequest.Payload.CipherContent, requestSecContent, connection.CommonKey.data());
+
+    const auto jwt = std::string(requestSecContent.Jwt);
+    DebugLog(jwt);
+
+    if (!ValidateJwt(jwt))
+    {
+        // TODO: Think about handling of such case
+        DebugLog("Wrong jwt!");
+        return;
+    }
+
+    PendingPacket.Header.PktType = PacketType::FILE_LIST_RESPONSE;
+
+    switch (requestSecContent.Type)
+    {
+        case FileRequestType::ViewFileList:
+            HandleViewFileListRequest(fileRequest); break;
+        case FileRequestType::DownloadFile:
+            HandleDownloadFileListRequest(fileRequest.Header.Port, requestSecContent); break;
+        case FileRequestType::UploadFile:
+            break;
+    }
+}
+
+void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileRequest) {
+    auto& connection = Connections[fileRequest.Header.Port];
+
+    try {
+//      fs::path current_path = fs::current_path();
+
+        std::string result;
+        for (const auto& entry : fs::directory_iterator(SERVER_DIRECTORY)) {
+            if (entry.is_regular_file()) {
+                result += entry.path().filename().string() + "\n";
+            }
+        }
+        DebugLog(result);
+
+        FileResponseSecContent secContent;
+        CopyAsCString(result, secContent.FileList);
+
+        EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, connection.CommonKey.data());
+
+        SendPendingPacket(fileRequest.Header.Port);
+
+//        copyFile("/home/seed/securityProject/serverFiles/some_file.txt", "/home/seed/securityProject/serverFiles/some_file_copy.txt");
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error accessing the directory: " << e.what() << std::endl;
+    }
+}
+
+void ServerApplication::HandleDownloadFileListRequest(const int clientPort, const FileRequestSecContent& requestSecContent)
+{
+    auto& connection = Connections[clientPort];
+    auto source = std::string(SERVER_DIRECTORY) + "/" + requestSecContent.FileName;
+    std::ifstream sourceFile(source, std::ios::binary);
+
+    if (!sourceFile.is_open()) {
+        std::cerr << "Error opening source file: " << source << std::endl;
+        return;
+    }
+
+    sourceFile.seekg(0, std::ios::end);
+    std::streampos remainingFileSize = sourceFile.tellg();
+    sourceFile.seekg(0, std::ios::beg);
+
+    constexpr int FILE_BUFFER_SIZE = sizeof(FileResponseSecContent::DownloadFileContent.FileContent);
+    while (!sourceFile.eof())
+    {
+
+        PendingPacket.Header.PktType = PacketType::FILE_LIST_RESPONSE;
+
+        FileResponseSecContent secContent;
+        sourceFile.read(secContent.DownloadFileContent.FileContent, FILE_BUFFER_SIZE);
+        std::streamsize bytesRead = sourceFile.gcount();
+        remainingFileSize -= bytesRead;
+        secContent.DownloadFileContent.Length = remainingFileSize > 0 ? FILE_BUFFER_SIZE + 1 : bytesRead;
+
+        EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, connection.CommonKey.data());
+        SendPendingPacket(clientPort);
+    }
+
+    sourceFile.close();
 }

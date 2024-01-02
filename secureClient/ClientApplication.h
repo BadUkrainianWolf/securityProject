@@ -14,24 +14,27 @@
 
 #include "Common/NetworkApplication.h"
 #include <cryptopp/integer.h>
-
+#include <cryptopp/secblock.h>
+#include <cryptopp/aes.h>
 
 class ClientApplication : public NetworkApplication
 {
 public:
     explicit ClientApplication(bool is_debug = false);
 
-    bool PerformKeyExchange();
-
     void Run();
 
-    int StartServerOnFirstAvailablePort();
-
 private:
-    int Port = -1;
-    CryptoPP::Integer CommonKey = -1;
-};
 
+    int Port = -1;
+    std::string Jwt = "";
+    CryptoPP::SecByteBlock CommonKey = CryptoPP::SecByteBlock(CryptoPP::AES::DEFAULT_KEYLENGTH);
+
+    int StartServerOnFirstAvailablePort();
+    bool PerformKeyExchange(std::array<char, 1024>& receive_buffer);
+    bool RequestFileList(std::array<char, 1024>& receive_buffer);
+    bool RequestFileDownload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
+};
 
 #endif //SECURITYPROJECT_SERVERAPPLICATION_H
 

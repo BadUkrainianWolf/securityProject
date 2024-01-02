@@ -1,7 +1,7 @@
 add_executable(secureServer ${CMAKE_CURRENT_SOURCE_DIR}/SecureServer.cpp
-        ../PacketLayouts.h
-        Auth/UserStorage.cpp
-        Auth/UserStorage.h
+        ../Common/PacketLayouts.h
+        Auth/LocalUserStorage.cpp
+        Auth/LocalUserStorage.h
         ../Definitions.h
         ServerApplication.cpp
         ServerApplication.h

@@ -2,6 +2,7 @@
 #define SECURITYPROJECT_NETWORKAPPLICATION_H
 
 #include <iostream>
+#include "PacketLayouts.h"
 
 class NetworkApplication {
 public:
@@ -17,6 +18,11 @@ public:
 
 protected:
     void DebugLog(std::string log);
+
+    PacketLayout PendingPacket;
+
+    void SendPendingPacket(int port);
+
 
 private:
     bool IsDebug = false;

@@ -1,6 +1,7 @@
 #include "NetworkApplication.h"
 #include "client.h"
 #include "server.h"
+#include "Utils.h"
 
 
 NetworkApplication::NetworkApplication(bool is_debug)
@@ -34,4 +35,11 @@ void NetworkApplication::DebugLog(std::string log)
 
 NetworkApplication::~NetworkApplication() {
     StopServer();
+}
+
+void NetworkApplication::SendPendingPacket(int port)
+{
+    auto expanded_packet = ExpandBuffer(PendingPacket.RawBytes);
+    SendMessage(expanded_packet.data(), port);
+    PendingPacket = CreateEmptyPacket();
 }

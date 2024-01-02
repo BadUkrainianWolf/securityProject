@@ -2,15 +2,15 @@
 // Created by seed on 12/27/23.
 //
 
-#include "UserStorage.h"
+#include "LocalUserStorage.h"
 #include "files.h"
 #include <iostream>
 
-const HardcodedUserValue UserStorage::HardcodedUserValues[] = {
+const HardcodedUserValue LocalUserStorage::HardcodedUserValues[] = {
         {"Mariia", "72B20983046F604B30B1C9C24CDC61809CC9172C7773A7A6DF52D9F2D55F80F3", "586529ED504F6AFFDEDEA283B845DA10"}
 };
 
-void UserStorage::PrintUsers()
+void LocalUserStorage::PrintUsers()
 {
     using namespace CryptoPP;
 
@@ -28,4 +28,15 @@ void UserStorage::PrintUsers()
         encoder.MessageEnd();
         std::cout << std::endl;
     }
+}
+
+User LocalUserStorage::GetUserData(std::string username) {
+    auto found_user = std::find_if(Users.begin(), Users.end(), [&username](const auto& user){
+        return user.username == username;
+    });
+
+    if (found_user == Users.end())
+        return User();
+
+    return *found_user;
 }

@@ -5,6 +5,8 @@ add_library(CommonStatic STATIC
         ../client.h
         Utils.cpp
         Utils.h
+        PacketLayouts.h
+        PacketLayouts.cpp
 )
 
 target_link_directories(CommonStatic

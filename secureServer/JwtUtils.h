@@ -9,5 +9,7 @@
 
 std::string GenerateJwt(const std::string& username);
 
+bool ValidateJwt(const std::string& jwt);
+
 
 #endif //SECURITYPROJECT_JWTUTILS_H

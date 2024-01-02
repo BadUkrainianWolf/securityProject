@@ -43,3 +43,9 @@ std::string GenerateJwt(const std::string& username)
 
     return jwt;
 }
+
+bool ValidateJwt(const std::string &jwt) {
+    // TODO: Add jwt check
+    // Check exp_time and hash
+    return true;
+}

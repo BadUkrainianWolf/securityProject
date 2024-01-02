@@ -2,8 +2,8 @@
 // Created by seed on 12/27/23.
 //
 
-#ifndef SECURITYPROJECT_USERSTORAGE_H
-#define SECURITYPROJECT_USERSTORAGE_H
+#ifndef SECURITYPROJECT_LOCALUSERSTORAGE_H
+#define SECURITYPROJECT_LOCALUSERSTORAGE_H
 
 #include "cryptopp/secblock.h"
 #include <string>
@@ -42,14 +42,14 @@ public:
     }
 };
 
-class UserStorage {
+class LocalUserStorage {
     static const HardcodedUserValue HardcodedUserValues[];
 
     std::vector<User> Users;
 
 public:
 
-    UserStorage()
+    LocalUserStorage()
     {
         Users.reserve(1);
         for (int i = 0; i < 1; ++i) {
@@ -57,8 +57,10 @@ public:
         }
     }
 
+    User GetUserData(std::string username);
+
     void PrintUsers();
 };
 
 
-#endif //SECURITYPROJECT_USERSTORAGE_H
+#endif //SECURITYPROJECT_LOCALUSERSTORAGE_H

@@ -90,3 +90,9 @@ std::string ToHexString(CryptoPP::Integer num) {
     return hexString;
 }
 
+void CopyAsCString(const std::string &str, char *buffer)
+{
+    auto c_str = str.c_str();
+    std::copy(c_str, c_str + strlen(c_str) + 1, buffer);
+}
+
