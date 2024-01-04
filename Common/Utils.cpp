@@ -6,6 +6,18 @@
 #include <algorithm>
 #include <termios.h>
 #include <unistd.h>
+#include <iostream>
+
+template<>
+void DebugLog<true>(const std::string& log)
+{
+    std::cout << "Debug: " << log << std::endl;
+}
+
+template<>
+void DebugLog<false>(const std::string& log)
+{
+}
 
 void ToggleEcho(bool enable) {
     struct termios t;

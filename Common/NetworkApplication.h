@@ -6,7 +6,7 @@
 
 class NetworkApplication {
 public:
-    explicit NetworkApplication(bool is_debug = false);
+    explicit NetworkApplication();
 
     int StartServer(int port);
     int StopServer();
@@ -17,15 +17,9 @@ public:
     ~NetworkApplication();
 
 protected:
-    void DebugLog(std::string log);
-
     PacketLayout PendingPacket;
-
     void SendPendingPacket(int port);
 
-
-private:
-    bool IsDebug = false;
 };
 
 

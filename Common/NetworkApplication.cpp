@@ -3,9 +3,7 @@
 #include "server.h"
 #include "Utils.h"
 
-
-NetworkApplication::NetworkApplication(bool is_debug)
-        : IsDebug(is_debug)
+NetworkApplication::NetworkApplication()
 {
 }
 
@@ -23,14 +21,6 @@ int NetworkApplication::GetMessage(char *msg_read) {
 
 int NetworkApplication::SendMessage(char* msg, int port) {
     return sndmsg(msg, port);
-}
-
-void NetworkApplication::DebugLog(std::string log)
-{
-    if (IsDebug)
-    {
-        std::cout << "Debug: " << log << std::endl;
-    }
 }
 
 NetworkApplication::~NetworkApplication() {

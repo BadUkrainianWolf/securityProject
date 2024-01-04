@@ -4,12 +4,10 @@
 #include <iostream>
 #include "files.h"
 #include <cryptopp/sha.h>
-#include <cryptopp/hex.h>
 #include <cryptopp/osrng.h>
 #include <cryptopp/pwdbased.h>
 #include <cryptopp/dh.h>
 #include <cryptopp/nbtheory.h>
-#include <cryptopp/modes.h>
 #include "JwtUtils.h"
 #include "Definitions.h"
 #include "Common/Utils.h"
@@ -37,8 +35,7 @@ SecByteBlock HashPassword(const std::string& password, const SecByteBlock& salt)
 }
 
 
-ServerApplication::ServerApplication(bool is_debug)
-    : NetworkApplication(is_debug)
+ServerApplication::ServerApplication()
 {
 }
 
@@ -139,8 +136,6 @@ void ServerApplication::HandleCredentials(const PacketLayout &credentialsPacket)
 
     const auto username = std::string(reinterpret_cast<const char *>(secContent.username));
     const auto password = std::string(reinterpret_cast<const char *>(secContent.password));
-    DebugLog(username);
-    DebugLog(password);
 
     auto user = UserStorage.GetUserData(username);
     SecByteBlock hashedPassword = HashPassword(password, user.salt);

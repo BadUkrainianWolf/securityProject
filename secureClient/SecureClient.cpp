@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[])
 {
-    ClientApplication client{true};
+    ClientApplication client;
     client.Run(argc, argv);
     return 0;
 }

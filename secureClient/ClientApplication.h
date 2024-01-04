@@ -20,7 +20,7 @@
 class ClientApplication : public NetworkApplication
 {
 public:
-    explicit ClientApplication(bool is_debug = false);
+    explicit ClientApplication();
 
     void Run(int argc, char* argv[]);
 

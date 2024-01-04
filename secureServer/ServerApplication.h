@@ -32,7 +32,7 @@ struct PortConnectionInfo
 class ServerApplication : public NetworkApplication
 {
 public:
-    explicit ServerApplication(bool is_debug = false);
+    explicit ServerApplication();
 
     void Run();
 

@@ -8,6 +8,10 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/modes.h>
 #include <cryptopp/integer.h>
+#include "Definitions.h"
+
+template<bool IsDebug = IS_DEBUG>
+void DebugLog(const std::string& log);
 
 void ToggleEcho(bool enable);
 

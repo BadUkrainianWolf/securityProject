@@ -13,8 +13,7 @@
 
 namespace fs = std::filesystem;
 
-ClientApplication::ClientApplication(bool is_debug)
-        : NetworkApplication(is_debug)
+ClientApplication::ClientApplication()
 {
 }
 
@@ -32,11 +31,8 @@ void ClientApplication::Run(int argc, char* argv[])
 {
     StartServerOnFirstAvailablePort();
 
-
     // TODO: Consider using SecByteBlock for receive_buffer
     std::array<char, 1024> receive_buffer;
-
-
 
     PerformKeyExchange(receive_buffer);
 
@@ -263,6 +259,8 @@ bool ClientApplication::PerformFileDownload(std::array<char, 1024> &receive_buff
         destinationFile.close();
     }
 
+    std::cout << fileName << " downloaded from server" << std::endl;
+
     return true;
 }
 
@@ -340,6 +338,8 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
     }
 
     file.close();
+
+    std::cout << fileName << " uploaded to server" << std::endl;
 
     return true;
 }

@@ -2,7 +2,7 @@
 #include "ServerApplication.h"
 
 int main() {
-    ServerApplication server{true};
+    ServerApplication server;
     server.Run();
 
     return 0;
