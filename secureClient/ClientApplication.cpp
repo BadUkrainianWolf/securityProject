@@ -1,7 +1,3 @@
-//
-// Created by seed on 12/30/23.
-//
-
 #include "ClientApplication.h"
 #include "Definitions.h"
 #include "Common/PacketLayouts.h"
@@ -12,8 +8,6 @@
 #include <cryptopp/dh.h>
 #include <cryptopp/nbtheory.h>
 #include <cryptopp/osrng.h>
-#include <cryptopp/aes.h>
-#include <cryptopp/modes.h>
 #include <filesystem>
 #include <fstream>
 
@@ -34,7 +28,7 @@ void TestShrinking()
     std::cout << (buffer_896 == shrinked) << std::endl;
 }
 
-void ClientApplication::Run()
+void ClientApplication::Run(int argc, char* argv[])
 {
     StartServerOnFirstAvailablePort();
 
@@ -42,10 +36,28 @@ void ClientApplication::Run()
     // TODO: Consider using SecByteBlock for receive_buffer
     std::array<char, 1024> receive_buffer;
 
+
+
     PerformKeyExchange(receive_buffer);
-//    RequestFileList(receive_buffer);
-//    PerformFileDownload(receive_buffer, "some_file.txt");
-    PerformFileUpload(receive_buffer, "some_file.txt");
+
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " -up filename | -list | -down filename" << std::endl;
+        return;
+    }
+
+    std::string action = argv[1];
+
+    if (action == "-up" && argc == 3) {
+        PerformFileUpload(receive_buffer, argv[2]);
+    } else if (action == "-list" && argc == 2) {
+        RequestFileList(receive_buffer);
+    } else if (action == "-down" && argc == 3) {
+        PerformFileDownload(receive_buffer, argv[2]);
+    } else {
+        std::cerr << "Invalid command" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " -up filename | -list | -down filename" << std::endl;
+        return;
+    }
 }
 
 int ClientApplication::StartServerOnFirstAvailablePort() {
@@ -114,12 +126,19 @@ bool ClientApplication::PerformKeyExchange(std::array<char, 1024>& receive_buffe
         DebugLog(ToHexString(commonKey));
         commonKey.Encode(CommonKey.data(), CommonKey.size());
 
-        std::string username = "Mariia";
+        std::string username, password;
 
-        CredentialsSecContent secContent{
-                "Mariia\0",
-                "secure_password\0"
-        };
+        std::cout << "You need to sign in to get access to server filesystem. Please provide your credentials\n";
+        std::cout << "Enter username:\n";
+        std::cin >> username;
+        ToggleEcho(false);
+        std::cout << "Enter password:\n";
+        std::cin >> password;
+        ToggleEcho(true);
+
+        CredentialsSecContent secContent;
+        CopyAsCString(username, reinterpret_cast<char *>(secContent.username), sizeof(secContent.username));
+        CopyAsCString(password, reinterpret_cast<char *>(secContent.password), sizeof(secContent.password));
 
         EncryptSecContent(credentialsPacket.Payload.Credentials, secContent, CommonKey.data());
         SendPendingPacket(SERVER_PORT);
@@ -155,7 +174,7 @@ bool ClientApplication::RequestFileList(std::array<char, 1024>& receive_buffer)
 
         FileRequestSecContent secContent;
         secContent.Type = FileRequestType::ViewFileList;
-        CopyAsCString(Jwt, secContent.Jwt);
+        CopyAsCString(Jwt, secContent.Jwt, sizeof(secContent.Jwt));
 
         EncryptSecContent(fileRequestPacket.Payload.CipherContent, secContent, CommonKey.data());
         SendPendingPacket(SERVER_PORT);
@@ -177,7 +196,7 @@ bool ClientApplication::RequestFileList(std::array<char, 1024>& receive_buffer)
         DecryptSecContent(fileRequestResponse.Payload.CipherContent, secContent, CommonKey.data());
 
         auto files = std::string(secContent.FileList);
-        DebugLog("Files on server: " + files);
+        std::cout <<"Files on server:\n" <<  files << std::endl;
     }
 
     return true;
@@ -193,8 +212,8 @@ bool ClientApplication::PerformFileDownload(std::array<char, 1024> &receive_buff
 
         FileRequestSecContent secContent;
         secContent.Type = FileRequestType::DownloadFile;
-        CopyAsCString(fileName, secContent.FileName);
-        CopyAsCString(Jwt, secContent.Jwt);
+        CopyAsCString(fileName, secContent.FileName, sizeof(secContent.FileName));
+        CopyAsCString(Jwt, secContent.Jwt, sizeof(secContent.Jwt));
 
         EncryptSecContent(fileRequestPacket.Payload.CipherContent, secContent, CommonKey.data());
         SendPendingPacket(SERVER_PORT);
@@ -257,8 +276,8 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
 
         FileRequestSecContent secContent;
         secContent.Type = FileRequestType::UploadFile;
-        CopyAsCString(fileName, secContent.FileName);
-        CopyAsCString(Jwt, secContent.Jwt);
+        CopyAsCString(fileName, secContent.FileName, sizeof(secContent.FileName));
+        CopyAsCString(Jwt, secContent.Jwt, sizeof(secContent.Jwt));
 
         EncryptSecContent(fileRequestPacket.Payload.CipherContent, secContent, CommonKey.data());
         SendPendingPacket(SERVER_PORT);
@@ -282,8 +301,17 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
             return false;
     }
 
-//    auto filePath = fs::current_path().string() + "/" + fileName;
-    auto filePath = std::string(CLIENT_DIRECTORY) + "/" + fileName;
+
+    auto filePathCurrentDir = fs::current_path().string() + "/" + fileName;
+    auto filePathClientDir = std::string(CLIENT_DIRECTORY) + "/" + fileName;
+    std::string filePath = "";
+    if (fs::exists(filePathCurrentDir))
+        filePath = filePathCurrentDir;
+    else if (fs::exists(filePathClientDir))
+        filePath = filePathClientDir;
+    else
+        std::cerr << "There is no such file" << std::endl;
+
     std::ifstream file(filePath, std::ios::binary);
 
     if (!file.is_open()) {
@@ -305,11 +333,13 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
         std::streamsize bytesRead = file.gcount();
         remainingFileSize -= bytesRead;
         secContent.UploadFileContent.Length = remainingFileSize > 0 ? FILE_BUFFER_SIZE + 1 : bytesRead;
-        CopyAsCString(Jwt, secContent.UploadFileContent.Jwt);
+        CopyAsCString(Jwt, secContent.UploadFileContent.Jwt, sizeof(secContent.UploadFileContent.Jwt));
 
         EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, CommonKey.data());
         SendPendingPacket(SERVER_PORT);
     }
 
     file.close();
+
+    return true;
 }

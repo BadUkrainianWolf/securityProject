@@ -22,7 +22,7 @@ class ClientApplication : public NetworkApplication
 public:
     explicit ClientApplication(bool is_debug = false);
 
-    void Run();
+    void Run(int argc, char* argv[]);
 
 private:
 

@@ -9,7 +9,11 @@
 #include <cryptopp/modes.h>
 #include <cryptopp/integer.h>
 
+void ToggleEcho(bool enable);
+
 std::string ToBase64(std::string source);
+
+std::string FromBase64(std::string source);
 
 std::string ToHexString(CryptoPP::Integer num);
 
@@ -17,7 +21,7 @@ std::array<char, 1024> ExpandBuffer(const std::array<char, 896>& input);
 
 std::array<char, 896> ShrinkBuffer(const std::array<char, 1024> &input);
 
-void CopyAsCString(const std::string& str, char* buffer);
+bool CopyAsCString(const std::string& str, char* buffer, int bufferLen);
 
 template<typename PacketPayloadLayoutT, typename SecContentT, int KeySize = CryptoPP::AES::DEFAULT_KEYLENGTH>
 bool EncryptSecContent(PacketPayloadLayoutT& payloadLayout, const SecContentT& secContent,

@@ -4,6 +4,20 @@
 #include <cryptopp/hex.h>
 #include <bitset>
 #include <algorithm>
+#include <termios.h>
+#include <unistd.h>
+
+void ToggleEcho(bool enable) {
+    struct termios t;
+    tcgetattr(STDIN_FILENO, &t);
+
+    if (enable)
+        t.c_lflag |= ECHO;
+    else
+        t.c_lflag &= ~ECHO;
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+}
 
 std::string ToBase64(std::string source)
 {
@@ -17,6 +31,17 @@ std::string ToBase64(std::string source)
 
     return encoded;
 }
+
+std::string FromBase64(std::string source) {
+    std::string decoded;
+    CryptoPP::StringSource(source, true,
+                           new CryptoPP::Base64Decoder(new CryptoPP::StringSink(decoded))
+    );
+
+    return decoded;
+
+}
+
 
 std::uint64_t Expand56To64(const std::uint64_t bits_56)
 {
@@ -90,9 +115,14 @@ std::string ToHexString(CryptoPP::Integer num) {
     return hexString;
 }
 
-void CopyAsCString(const std::string &str, char *buffer)
+bool CopyAsCString(const std::string &str, char *buffer, int bufferLen)
 {
+    const int cStringLen = str.size() + 1;
+    if (cStringLen > bufferLen)
+        return false;
+
     auto c_str = str.c_str();
-    std::copy(c_str, c_str + strlen(c_str) + 1, buffer);
+    std::copy(c_str, c_str + cStringLen, buffer);
+    return true;
 }
 

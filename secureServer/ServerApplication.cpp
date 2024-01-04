@@ -154,7 +154,7 @@ void ServerApplication::HandleCredentials(const PacketLayout &credentialsPacket)
 
         PendingPacket.Header.PktType = PacketType::JWT;
         JwtSecContent jwtSecContent;
-        CopyAsCString(GenerateJwt(username), jwtSecContent.jwt);
+        CopyAsCString(GenerateJwt(username), jwtSecContent.jwt, sizeof(jwtSecContent.jwt));
 
         EncryptSecContent(PendingPacket.Payload.CipherContent, jwtSecContent, connection.CommonKey.data());
         SendPendingPacket(clientPort);
@@ -203,7 +203,6 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
     auto& connection = Connections[fileRequest.Header.Port];
 
     try {
-//      fs::path current_path = fs::current_path();
         if (!fs::exists(SERVER_DIRECTORY))
             fs::create_directory(SERVER_DIRECTORY);
 
@@ -216,7 +215,7 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
         DebugLog(result);
 
         FileResponseSecContent secContent;
-        CopyAsCString(result, secContent.FileList);
+        CopyAsCString(result, secContent.FileList, sizeof(secContent.FileList));
 
         EncryptSecContent(PendingPacket.Payload.CipherContent, secContent, connection.CommonKey.data());
 

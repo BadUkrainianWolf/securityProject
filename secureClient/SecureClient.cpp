@@ -1,7 +1,8 @@
 #include "ClientApplication.h"
 
-int main() {
+int main(int argc, char* argv[])
+{
     ClientApplication client{true};
-    client.Run();
+    client.Run(argc, argv);
     return 0;
 }
