@@ -3,8 +3,8 @@
 release_build_folder="cmake-build-release"
 executables_folder="Executables"
 
-server_exe="secureClient/secureClient"
-client_exe="secureServer/secureServer"
+server_exe="secureServer/secureServer"
+client_exe="secureClient/sectrans"
 
 if [ -f "$release_build_folder/$server_exe" ]; then
     cp "$release_build_folder/$server_exe" "$executables_folder/"
