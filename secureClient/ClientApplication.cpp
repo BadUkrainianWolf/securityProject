@@ -216,10 +216,11 @@ bool ClientApplication::PerformFileDownload(std::array<char, 1024> &receive_buff
     }
 
     {
-        if (!fs::exists(CLIENT_DIRECTORY))
-            fs::create_directory(CLIENT_DIRECTORY);
+        const auto clientDir = GetClientDirectory();
+        if (!fs::exists(clientDir))
+            fs::create_directory(clientDir);
 
-        std::string destination = std::string(CLIENT_DIRECTORY) + "/" + fileName;
+        std::string destination = clientDir + "/" + fileName;
         std::ofstream destinationFile(destination, std::ios::binary);
 
         if (!destinationFile.is_open()) {
@@ -301,7 +302,7 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
 
 
     auto filePathCurrentDir = fs::current_path().string() + "/" + fileName;
-    auto filePathClientDir = std::string(CLIENT_DIRECTORY) + "/" + fileName;
+    auto filePathClientDir = GetClientDirectory()+ "/" + fileName;
     std::string filePath = "";
     if (fs::exists(filePathCurrentDir))
         filePath = filePathCurrentDir;
@@ -342,4 +343,8 @@ bool ClientApplication::PerformFileUpload(std::array<char, 1024> &receive_buffer
     std::cout << fileName << " uploaded to server" << std::endl;
 
     return true;
+}
+
+std::string ClientApplication::GetClientDirectory() {
+    return fs::current_path().string() + "/" + CLIENT_DIRECTORY;
 }

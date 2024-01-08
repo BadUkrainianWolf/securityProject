@@ -2,7 +2,7 @@
 
 #include <filesystem>
 #include <iostream>
-#include "files.h"
+#include "cryptopp/files.h"
 #include <cryptopp/sha.h>
 #include <cryptopp/osrng.h>
 #include <cryptopp/pwdbased.h>
@@ -198,11 +198,12 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
     auto& connection = Connections[fileRequest.Header.Port];
 
     try {
-        if (!fs::exists(SERVER_DIRECTORY))
-            fs::create_directory(SERVER_DIRECTORY);
+        const auto serverDir = GetServerDirFullPath();
+        if (!fs::exists(serverDir))
+            fs::create_directory(serverDir);
 
         std::string result;
-        for (const auto& entry : fs::directory_iterator(SERVER_DIRECTORY)) {
+        for (const auto& entry : fs::directory_iterator(serverDir)) {
             if (entry.is_regular_file()) {
                 result += entry.path().filename().string() + "\n";
             }
@@ -223,7 +224,7 @@ void ServerApplication::HandleViewFileListRequest(const PacketLayout &fileReques
 void ServerApplication::HandleDownloadFileListRequest(const int clientPort, const FileRequestSecContent& requestSecContent)
 {
     auto& connection = Connections[clientPort];
-    auto filePath = std::string(SERVER_DIRECTORY) + "/" + requestSecContent.FileName;
+    auto filePath = GetServerDirFullPath() + "/" + requestSecContent.FileName;
     std::ifstream file(filePath, std::ios::binary);
 
     if (!file.is_open()) {
@@ -274,10 +275,11 @@ void ServerApplication::HandleUploadFileListRequest(const int clientPort,
     std::array<char, 1024> receive_buffer;
 
     {
-        if (!fs::exists(SERVER_DIRECTORY))
-            fs::create_directory(SERVER_DIRECTORY);
+        const auto serverDir = GetServerDirFullPath();
+        if (!fs::exists(serverDir))
+            fs::create_directory(serverDir);
 
-        std::string destination = std::string(SERVER_DIRECTORY) + "/" + fileName;
+        std::string destination = std::string(serverDir) + "/" + fileName;
         std::ofstream destinationFile(destination, std::ios::binary);
 
         if (!destinationFile.is_open()) {
@@ -319,4 +321,8 @@ void ServerApplication::HandleUploadFileListRequest(const int clientPort,
     }
 
 
+}
+
+std::string ServerApplication::GetServerDirFullPath() {
+    return fs::current_path().string() + "/" + SERVER_DIRECTORY;
 }

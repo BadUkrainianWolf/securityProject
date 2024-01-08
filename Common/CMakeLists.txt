@@ -16,4 +16,6 @@ target_link_directories(CommonStatic
 target_link_libraries(CommonStatic
         PUBLIC server
         PUBLIC client
-        PRIVATE cryptopp)
+#        PRIVATE cryptopp
+        PRIVATE ${PROJECT_SOURCE_DIR}/cryptopp/libcryptopp.a
+)

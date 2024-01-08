@@ -6,9 +6,10 @@ add_executable(sectrans SecureClient.cpp
         ClientApplication.h
 )
 
-target_link_directories(sectrans PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+#target_link_directories(sectrans PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(sectrans
         PRIVATE CommonStatic
-        PRIVATE cryptopp
+#        PRIVATE cryptopp
+        PRIVATE ${PROJECT_SOURCE_DIR}/cryptopp/libcryptopp.a
 )

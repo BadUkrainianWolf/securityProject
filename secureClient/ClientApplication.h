@@ -35,6 +35,8 @@ private:
     bool RequestFileList(std::array<char, 1024>& receive_buffer);
     bool PerformFileDownload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
     bool PerformFileUpload(std::array<char, 1024>& receive_buffer, const std::string& fileName);
+
+    std::string GetClientDirectory();
 };
 
 #endif //SECURITYPROJECT_SERVERAPPLICATION_H

@@ -13,12 +13,13 @@ add_executable(secureServer ${CMAKE_CURRENT_SOURCE_DIR}/SecureServer.cpp
 
 add_dependencies(secureServer CommonStatic)
 
-target_link_directories(secureServer
-        PRIVATE ../cryptopp890
-)
+#target_link_directories(secureServer
+#        PRIVATE ../cryptopp
+#)
 
 
 target_link_libraries(secureServer
         PRIVATE CommonStatic
-        PRIVATE cryptopp
+#        PRIVATE cryptopp
+        PRIVATE ${PROJECT_SOURCE_DIR}/cryptopp/libcryptopp.a
 )
